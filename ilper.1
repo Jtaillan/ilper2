@@ -1,0 +1,237 @@
+.TH ilper 1 "May 2026" "ilper 2.5" "HP-IL Peripherals Emulator"
+.SH NAME
+ilper \- HP-IL peripherals emulator for the PILBox
+.SH SYNOPSIS
+.B ilper
+.SH DESCRIPTION
+.B ilper
+emulates a set of HP-IL peripherals for use with the PILBox, a USB/HP-IL
+converter designed by Jean-François Garnier.
+It is intended for use with HP-IL controllers such as the HP-41C/CV/CX,
+HP-75C and HP-71B.
+.PP
+On startup,
+.B ilper
+reads its configuration file, opens the terminal in full-screen mode and
+automatically starts the HP-IL emulation.
+The top line of the screen is a status bar showing the HP-IL address of each
+active device, and the indicator
+.B [SCOPE]
+when the scope log file is open.
+A separator line is drawn below the status bar.
+The remaining lines form the display terminal window, sized to the terminal.
+.PP
+To exit, send SIGINT (Ctrl-C) or SIGTERM.
+.SH EMULATED DEVICES
+Between two and four HP-IL peripherals are emulated, depending on the configuration:
+.TP
+.B Display terminal (address 1, AID 0x32)
+A terminal whose size adapts to the terminal window (minimum 80 columns).
+The scroll buffer holds up to 100 lines.
+Addresses are assigned by AAU (fixed) or AAD (sequential auto-address).
+.br
+Accepts the following ESC sequences from the HP-IL controller:
+.nf
+
+  ESC A   Cursor up
+  ESC B   Cursor down
+  ESC C   Cursor right
+  ESC D   Cursor left
+  ESC E   Clear device (clear buffer, cursor home)
+  ESC H   Cursor home
+  ESC J   Clear from cursor to end of buffer
+  ESC Q   Insert cursor (bar cursor shape)
+  ESC R   Replace cursor (block cursor shape)
+  ESC S   Roll up (scroll window down)
+  ESC T   Roll down (scroll window up)
+  ESC <   Cursor off
+  ESC >   Cursor on
+  ESC %   Cursor to address (two bytes follow: column, row)
+.fi
+.IP
+The SST (send status) response consists of two bytes.
+The first byte is always 0x80.
+The second byte has the following bit layout (bit 7 is always 0):
+.nf
+
+  bit 6,5   RAM test result (always 0 = good)
+  bit 4     cursor mode: 0 = replace, 1 = insert
+  bit 3     cursor: 0 = displayed, 1 = not displayed
+  bit 2     video output: 0 = NTSC, 1 = PAM (always 0)
+  bit 1     character set: 0 = inverse, 1 = roman8
+  bit 0     screen width: 0 = 80 columns, 1 = 40 columns (always 0)
+.fi
+.IP
+When keyboard forwarding is enabled (see
+.BR keyboard ),
+keystrokes are translated as follows before being sent to the controller:
+.nf
+
+  Arrow keys      ESC A / ESC B / ESC C / ESC D
+  Return          CR (0x0D)
+  Escape          ESC ESC
+  Backspace       ESC i
+  Other keys      sent as-is
+.fi
+.IP
+The rendering of characters with codes 128\(en255 is controlled by the
+.B display_encoding
+configuration key.
+With
+.B roman8
+(the default), characters are interpreted as HP Roman-8 and converted
+to Unicode for display.
+With
+.BR inverse ,
+the low 7 bits of each byte are displayed in reverse video.
+.TP
+.B Mass storage 1 (address 2)
+A LIF disk image emulation.
+The path to the LIF image file is set by the
+.B LIF_file1
+key in the configuration file.
+If absent, no drive is present on the HP-IL loop.
+.TP
+.B Mass storage 2 (address 3)
+A second LIF disk image emulation.
+The path to the LIF image file is set by the
+.B LIF_file2
+key in the configuration file.
+If absent, the second drive is not present on the HP-IL loop.
+.B LIF_file2
+requires
+.B LIF_file1
+to be set.
+.TP
+.B Printer (address 4, AID 0x22 \(em 80 columns, HP Escape sequences, no graphics)
+A dumb printer that logs its output to the file specified by the
+.B printer
+key in the configuration file.
+If absent or empty, printer output is discarded.
+HP Roman-8 characters above 127 are converted to UTF-8 in the log.
+.SH CONFIGURATION
+.B ilper
+reads its configuration from
+.I $XDG_CONFIG_HOME/ilper/ilper.conf
+(defaulting to
+.IR ~/.config/ilper/ilper.conf ).
+The configuration file is mandatory: the program exits if it cannot be opened.
+Lines beginning with
+.B #
+are comments. Each setting has the form
+.IR key = value "  # optional comment"
+Unknown keys are treated as errors.
+.PP
+Paths in the configuration file may be absolute, relative to
+.IR $HOME ,
+or use a leading
+.B ~
+as an alias for
+.IR $HOME .
+.PP
+Recognised keys:
+.TP
+.B device
+Serial port to which the PILBox is connected.
+This key is mandatory.
+.TP
+.B LIF_file1
+Path to the first LIF disk image file.
+The file must exist and be readable and writable.
+If absent, no mass-storage drive is present on the HP-IL loop.
+.TP
+.B LIF_file2
+Path to the second LIF disk image file.
+The file must exist and be readable and writable.
+Requires
+.B LIF_file1
+to be set.
+If absent, only one drive is emulated.
+.TP
+.B baudrate
+Serial baud rate:
+.B 115200
+or
+.BR 230400 .
+This key is mandatory.
+.TP
+.B keyboard
+Forward Mac keyboard input to the HP calculator.
+Accepted values:
+.B on
+(enables COFI PILBox mode, IDY frames forwarded to the host) or
+.BR off .
+This key is mandatory.
+.TP
+.B display_encoding
+Character encoding for bytes 128\(en255 on the display terminal.
+.B roman8
+(default): HP Roman-8 converted to Unicode.
+.BR inverse :
+the low 7 bits of each byte are displayed in reverse video.
+This key is optional; the default is
+.BR roman8 .
+.TP
+.B scope
+Path to the HP-IL frame log file.
+If absent or empty, frame logging is disabled.
+.TP
+.B printer
+Path to the printer output log file.
+If absent or empty, printer output is discarded.
+.SH FILES
+.TP
+.I ~/.config/ilper/ilper.conf
+Configuration file (mandatory).
+.TP
+.I <LIF_file1 path>
+First LIF disk image, if configured.
+.TP
+.I <LIF_file2 path>
+Second LIF disk image, if configured.
+.TP
+.I <printer path>
+Printer output log, if configured.
+.TP
+.I <scope path>
+HP-IL frame log, if configured.
+.SH NOTES
+The PILBox requires an FTDI USB serial driver.
+Recent Linux distributions load it automatically when the device is plugged in.
+On macOS, the built-in
+.I AppleUSBFTDI
+driver (macOS 10.14 and later) may be used.
+.PP
+The HP82160A HP-IL module is required to use the PILBox with the HP-41C/CV/CX.
+.PP
+The cursor shape sequences (ESC Q, ESC R) require a terminal emulator that
+supports DECSCUSR (e.g. Ghostty, iTerm2, most xterm-compatible terminals).
+.SH BUGS
+The HP-IL addresses of the emulated peripherals are fixed by default
+(display at 1, mass storage 1 at 2, mass storage 2 at 3, printer at 4)
+when assigned by AAU.
+When assigned by AAD (sequential auto-address), addresses depend on the
+physical order of devices in the HP-IL loop.
+.SH REFERENCES
+.UR http://www.jeffcalc.hp41.eu/hpil/index.html
+HP-IL resource page and PILBox — Jean-François Garnier
+.UE
+.sp
+.UR https://literature.hpcalc.org/items/1751
+.I
+The HP-IL System
+— Gerry Kane, Steve Harper and David Ushijima
+.UE
+.sp
+.UR https://literature.hpcalc.org/items/454
+.I
+The HP-IL Interface Specification (HP 82166-90017)
+.UE
+.SH AUTHOR
+.B ilper
+was originally written by Jean-François Garnier for Windows/PC.
+It was ported to Linux by Christophe Gottheimer in 2011.
+Ported to macOS, thoroughly revised, and extended with a terminal emulator
+and Roman-8 support by Janick Taillandier in 2026.
+.br
+The source code is distributed under the GNU General Public License version 2.
